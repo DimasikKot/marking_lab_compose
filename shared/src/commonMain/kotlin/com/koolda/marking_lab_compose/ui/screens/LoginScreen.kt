@@ -8,18 +8,30 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import cafe.adriel.voyager.core.model.ScreenModel
+import cafe.adriel.voyager.core.model.rememberScreenModel
+import cafe.adriel.voyager.core.model.screenModelScope
+import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
-import cafe.adriel.voyager.screenmodel.ScreenModel
-import cafe.adriel.voyager.screenmodel.rememberScreenModel
 import com.koolda.marking_lab_compose.api.ApiClient
 import com.koolda.marking_lab_compose.api.LoginRequest
-import com.koolda.marking_lab_compose.api.UserResponse
 import com.koolda.marking_lab_compose.api.ValidateLoginRequest
-import com.koolda.marking_lab_compose.ui.navigation.Screen
 import com.koolda.marking_lab_compose.util.TokenManager
 import kotlinx.coroutines.launch
+
+
+class LoginScreen : Screen {
+    @Composable
+    override fun Content() {
+        // 2. Теперь мы внутри Screen, и rememberScreenModel доступен!
+        val screenModel = rememberScreenModel { LoginScreenModel() }
+
+        // Вызываем ваш UI контент
+        LoginContent(screenModel)
+    }
+}
 
 sealed class LoginStep {
     object Login : LoginStep()
@@ -32,16 +44,16 @@ class LoginScreenModel : ScreenModel {
     var step by mutableStateOf<LoginStep>(LoginStep.Login)
     var isLoading by mutableStateOf(false)
     var errorMessage by mutableStateOf<String?>(null)
-    
-    fun handleNext(navigator: Navigator) {
-        coroutineScope.launch {
+
+    fun handleNext(navigator: Navigator?) {
+        screenModelScope.launch {
             when (step) {
                 is LoginStep.Login -> {
                     if (login.isBlank()) {
                         errorMessage = "Введите имя пользователя или email"
                         return@launch
                     }
-                    
+
                     isLoading = true
                     try {
                         ApiClient.api.validateLogin(ValidateLoginRequest(login))
@@ -53,18 +65,19 @@ class LoginScreenModel : ScreenModel {
                         isLoading = false
                     }
                 }
+
                 is LoginStep.Password -> {
                     if (password.isBlank()) {
                         errorMessage = "Введите пароль"
                         return@launch
                     }
-                    
+
                     isLoading = true
                     try {
                         val response = ApiClient.api.login(LoginRequest(login, password))
                         TokenManager.accessToken = response.accessToken
                         TokenManager.username = response.username
-                        navigator.replaceAll(Screen.Home)
+                        navigator.replaceAll(HomeScreen())
                     } catch (e: Exception) {
                         errorMessage = e.message
                     } finally {
@@ -74,7 +87,7 @@ class LoginScreenModel : ScreenModel {
             }
         }
     }
-    
+
     fun handleBack() {
         if (step is LoginStep.Password) {
             step = LoginStep.Login
@@ -83,16 +96,15 @@ class LoginScreenModel : ScreenModel {
 }
 
 @Composable
-override fun Content() {
-    val navigator = Navigator.current
-    val screenModel: LoginScreenModel = rememberScreenModel()
-    
+fun LoginContent(screenModel: LoginScreenModel) {
+    val navigator = LocalNavigator.current
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Вход") },
                 navigationIcon = {
-                    IconButton(onClick = { navigator.pop() }) {
+                    IconButton(onClick = { navigator?.pop() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
                     }
                 }
@@ -131,7 +143,7 @@ override fun Content() {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(24.dp))
-                            
+
                             OutlinedTextField(
                                 value = screenModel.login,
                                 onValueChange = { screenModel.login = it },
@@ -141,6 +153,7 @@ override fun Content() {
                                 enabled = !screenModel.isLoading
                             )
                         }
+
                         is LoginStep.Password -> {
                             Text(
                                 text = "Введите пароль",
@@ -153,7 +166,7 @@ override fun Content() {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(24.dp))
-                            
+
                             OutlinedTextField(
                                 value = screenModel.password,
                                 onValueChange = { screenModel.password = it },
@@ -165,7 +178,7 @@ override fun Content() {
                             )
                         }
                     }
-                    
+
                     screenModel.errorMessage?.let { error ->
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
@@ -174,9 +187,9 @@ override fun Content() {
                             color = MaterialTheme.colorScheme.error
                         )
                     }
-                    
+
                     Spacer(modifier = Modifier.height(24.dp))
-                    
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -188,7 +201,7 @@ override fun Content() {
                         } else {
                             Spacer(modifier = Modifier.width(1.dp))
                         }
-                        
+
                         Button(
                             onClick = { screenModel.handleNext(navigator) },
                             enabled = !screenModel.isLoading
@@ -208,9 +221,9 @@ override fun Content() {
                             )
                         }
                     }
-                    
+
                     Spacer(modifier = Modifier.height(16.dp))
-                    
+
                     TextButton(onClick = { navigator.push(Screen.Register) }) {
                         Text("Нет аккаунта? Зарегистрироваться")
                     }
