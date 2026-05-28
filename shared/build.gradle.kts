@@ -60,7 +60,3 @@ kotlin {
         }
     }
 }
-
-ktorfit {
-    enabled.set(true)
-}
