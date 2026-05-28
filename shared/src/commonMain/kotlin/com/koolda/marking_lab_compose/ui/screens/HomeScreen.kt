@@ -93,7 +93,7 @@ fun HomeContent(screenModel: HomeScreenModel) {
                     // Center card
                     InfoCardBig(
                         icon = Icons.Default.AutoAwesome,
-                        onClick = { })
+                        onClick = { navigator.push(ProjectsScreen()) })
 
                     // Right card
                     InfoCard(

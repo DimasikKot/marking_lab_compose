@@ -4,7 +4,7 @@ import org.w3c.dom.Storage
 import org.w3c.dom.get
 import org.w3c.dom.set
 
-actual object localStorage {
+actual object LocalStorage {
     private val storage: Storage by lazy {
         web.storage.localStorage
     }

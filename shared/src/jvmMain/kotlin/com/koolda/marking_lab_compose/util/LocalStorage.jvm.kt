@@ -2,7 +2,7 @@ package com.koolda.marking_lab_compose.util
 
 import java.util.prefs.Preferences
 
-actual object localStorage {
+actual object LocalStorage {
     private val prefs: Preferences by lazy {
         Preferences.userNodeForPackage(TokenManager::class.java)
     }

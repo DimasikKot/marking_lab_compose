@@ -33,18 +33,18 @@ kotlin {
             implementation(libs.compose.materialIconsExtended)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
-            
+
             // Voyager navigation
             implementation(libs.voyager.navigator)
             implementation(libs.voyager.screenModel)
             implementation(libs.voyager.transitions)
-            
+
             // Ktor client
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
             implementation(libs.kotlinx.serialization.json)
-            
+
             // Ktorfit
             implementation(libs.ktorfit.lib)
         }

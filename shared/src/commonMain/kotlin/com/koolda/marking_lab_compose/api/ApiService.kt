@@ -1,5 +1,6 @@
 package com.koolda.marking_lab_compose.api
 
+import com.koolda.marking_lab_compose.util.TokenManager
 import de.jensklingenberg.ktorfit.Ktorfit
 import de.jensklingenberg.ktorfit.http.Body
 import de.jensklingenberg.ktorfit.http.GET
@@ -8,7 +9,9 @@ import de.jensklingenberg.ktorfit.http.POST
 import de.jensklingenberg.ktorfit.http.Path
 import de.jensklingenberg.ktorfit.http.Query
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.DefaultRequest
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.header
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -87,7 +90,7 @@ data class ValidateLoginRequest(
 
 @Serializable
 data class CreateProjectRequest(
-    val name: String, val description: String, @SerialName("is_public") val isPublic: Boolean
+    val name: String, val description: String?, @SerialName("is_public") val isPublic: Boolean
 )
 
 @Serializable
@@ -190,6 +193,12 @@ object ApiClient {
                 ignoreUnknownKeys = true
                 isLenient = true
             })
+        }
+
+        install(DefaultRequest) {
+            TokenManager.accessToken?.let { token ->
+                header("Authorization", "Bearer $token")
+            }
         }
     }
 
