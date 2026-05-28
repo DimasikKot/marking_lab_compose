@@ -77,7 +77,7 @@ class LoginScreenModel : ScreenModel {
                         val response = ApiClient.api.login(LoginRequest(login, password))
                         TokenManager.accessToken = response.accessToken
                         TokenManager.username = response.username
-                        navigator.replaceAll(HomeScreen())
+                        navigator?.replaceAll(HomeScreen())
                     } catch (e: Exception) {
                         errorMessage = e.message
                     } finally {
@@ -97,15 +97,15 @@ class LoginScreenModel : ScreenModel {
 
 @Composable
 fun LoginContent(screenModel: LoginScreenModel) {
-    val navigator = LocalNavigator.current
+    val navigator = LocalNavigator.current ?: return Text("Hi")
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Вход") },
                 navigationIcon = {
-                    IconButton(onClick = { navigator?.pop() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                    IconButton(onClick = { navigator.pop() }) {
+                        Icon(Icons.Default.ArrowCircleLeft, contentDescription = "Назад")
                     }
                 }
             )
@@ -224,7 +224,7 @@ fun LoginContent(screenModel: LoginScreenModel) {
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    TextButton(onClick = { navigator.push(Screen.Register) }) {
+                    TextButton(onClick = { navigator.push(RegisterScreen()) }) {
                         Text("Нет аккаунта? Зарегистрироваться")
                     }
                 }

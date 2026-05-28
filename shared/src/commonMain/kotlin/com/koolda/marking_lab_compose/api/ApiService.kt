@@ -3,6 +3,7 @@ package com.koolda.marking_lab_compose.api
 import de.jensklingenberg.ktorfit.Ktorfit
 import de.jensklingenberg.ktorfit.http.Body
 import de.jensklingenberg.ktorfit.http.GET
+import de.jensklingenberg.ktorfit.http.Headers
 import de.jensklingenberg.ktorfit.http.POST
 import de.jensklingenberg.ktorfit.http.Path
 import de.jensklingenberg.ktorfit.http.Query
@@ -61,15 +62,12 @@ data class ValidateResponse(
 
 @Serializable
 data class RegisterRequest(
-    val username: String,
-    val email: String,
-    val password: String
+    val username: String, val email: String, val password: String
 )
 
 @Serializable
 data class LoginRequest(
-    val login: String,
-    val password: String
+    val login: String, val password: String
 )
 
 @Serializable
@@ -89,16 +87,12 @@ data class ValidateLoginRequest(
 
 @Serializable
 data class CreateProjectRequest(
-    val name: String,
-    val description: String,
-    @SerialName("is_public") val isPublic: Boolean
+    val name: String, val description: String, @SerialName("is_public") val isPublic: Boolean
 )
 
 @Serializable
 data class PatchProjectRequest(
-    val name: String,
-    val description: String,
-    @SerialName("is_public") val isPublic: Boolean
+    val name: String, val description: String, @SerialName("is_public") val isPublic: Boolean
 )
 
 @Serializable
@@ -127,59 +121,68 @@ data class ModelsResponse(
 
 interface MarkingLabApi {
     // Auth endpoints
+    @Headers("Content-Type: application/json")
     @POST("users/")
     suspend fun register(@Body request: RegisterRequest): UserResponse
 
+    @Headers("Content-Type: application/json")
     @POST("users/login")
     suspend fun login(@Body request: LoginRequest): UserResponse
 
+    @Headers("Content-Type: application/json")
     @POST("users/validate-username")
     suspend fun validateUsername(@Body request: ValidateUsernameRequest): ValidateResponse
 
+    @Headers("Content-Type: application/json")
     @POST("users/validate-email")
     suspend fun validateEmail(@Body request: ValidateEmailRequest): ValidateResponse
 
+    @Headers("Content-Type: application/json")
     @POST("users/validate-login")
     suspend fun validateLogin(@Body request: ValidateLoginRequest): ValidateResponse
 
     // Projects endpoints
+    @Headers("Content-Type: application/json")
     @GET("projects")
     suspend fun getProjects(
-        @Query("sort") sort: String? = null,
-        @Query("search") search: String? = null
+        @Query("sort") sort: String? = null, @Query("search") search: String? = null
     ): ProjectsResponse
 
+    @Headers("Content-Type: application/json")
     @POST("projects")
     suspend fun createProject(@Body request: CreateProjectRequest): ProjectDbResponse
 
+    @Headers("Content-Type: application/json")
     @GET("projects/{id}")
     suspend fun getProjectById(@Path("id") projectId: Int): ProjectDbResponse
 
+    @Headers("Content-Type: application/json")
     @POST("projects/{id}")
     suspend fun updateProject(
-        @Path("id") projectId: Int,
-        @Body request: PatchProjectRequest
+        @Path("id") projectId: Int, @Body request: PatchProjectRequest
     ): ProjectDbResponse
 
     // Files endpoints
+    @Headers("Content-Type: application/json")
     @GET("projects/{projectId}/files")
     suspend fun getFiles(@Path("projectId") projectId: Int): FilesResponse
 
     // Models endpoints
+    @Headers("Content-Type: application/json")
     @GET("projects/{projectId}/models")
     suspend fun getModels(@Path("projectId") projectId: Int): ModelsResponse
 
+    @Headers("Content-Type: application/json")
     @POST("projects/{projectId}/models")
     suspend fun createModel(
-        @Path("projectId") projectId: Int,
-        @Body request: CreateModelRequest
+        @Path("projectId") projectId: Int, @Body request: CreateModelRequest
     ): ModelListResponse
 }
 
 // ==================== Ktorfit Setup ====================
 
 object ApiClient {
-    private const val BASE_URL = "http://localhost:8000/api"
+    private const val BASE_URL = "http://localhost:8000/api/v1/"
 
     val httpClient = HttpClient {
         install(ContentNegotiation) {
@@ -191,10 +194,7 @@ object ApiClient {
     }
 
     val ktorfit: Ktorfit by lazy {
-        Ktorfit.Builder()
-            .baseUrl(BASE_URL)
-            .httpClient(httpClient)
-            .build()
+        Ktorfit.Builder().baseUrl(BASE_URL).httpClient(httpClient).build()
     }
 
     val api: MarkingLabApi by lazy {

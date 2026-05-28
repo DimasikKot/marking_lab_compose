@@ -14,11 +14,8 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.Navigator
 import com.koolda.marking_lab_compose.api.ApiClient
-import com.koolda.marking_lab_compose.api.CreateProjectRequest
 import com.koolda.marking_lab_compose.api.ProjectDbResponse
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 
@@ -64,12 +61,12 @@ class HomeScreenModel : ScreenModel {
 
 @Composable
 fun HomeContent(screenModel: HomeScreenModel) {
-    val navigator = LocalNavigator.current
+    val navigator = LocalNavigator.current ?: return Text("Hi")
 
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("Главная") }, actions = {
-                IconButton(onClick = { /* Profile */ }) {
+                IconButton(onClick = { navigator.push(LoginScreen()) }) {
                     Icon(Icons.Default.Person, contentDescription = "Profile")
                 }
             })
@@ -96,10 +93,7 @@ fun HomeContent(screenModel: HomeScreenModel) {
                     // Center card
                     InfoCardBig(
                         icon = Icons.Default.AutoAwesome,
-                        title = "Создать новый проект",
-                        description = "Начните работать с данными уже сегодня!",
-                        buttonText = "Перейти к проектам",
-                        onClick = { navigator.push(Projects) })
+                        onClick = { })
 
                     // Right card
                     InfoCard(
@@ -153,11 +147,13 @@ private fun InfoCard(
 @Composable
 private fun InfoCardBig(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    description: String,
-    buttonText: String,
     onClick: () -> Unit
 ) {
+    val title = "Создать новый проект"
+    val description = "Начните работать с данными уже сегодня!"
+    val buttonText = "Перейти к проектам"
+
+
     Card(
         modifier = Modifier.width(300.dp), elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
