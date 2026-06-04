@@ -22,6 +22,7 @@ import cafe.adriel.voyager.navigator.Navigator
 import com.koolda.marking_lab_compose.api.ApiClient
 import com.koolda.marking_lab_compose.api.CreateProjectRequest
 import com.koolda.marking_lab_compose.api.ProjectDbResponse
+import com.koolda.marking_lab_compose.db.LocalDb
 import kotlinx.coroutines.launch
 
 
@@ -45,6 +46,9 @@ class ProjectsScreenModel : ScreenModel {
     var newProjectDescription by mutableStateOf("")
 
     init {
+        // Сначала показываем кэш — мгновенно, без ожидания сети
+        projects = LocalDb.getProjects()
+        // Затем фоново синхронизируем с сервером
         loadProjects()
     }
 
@@ -53,19 +57,15 @@ class ProjectsScreenModel : ScreenModel {
             isLoading = true
             errorMessage = null
             try {
-                val response = ApiClient.api.getProjects()
-                projects = response.data.map {
-                    ProjectDbResponse(
-                        id = it.id,
-                        name = it.name,
-                        description = it.description,
-                        isPublic = it.isPublic,
-                        createdAt = it.createdAt,
-                        updatedAt = it.updatedAt,
-                    )
-                }
+                val fetched = ApiClient.api.getProjects().data
+                LocalDb.saveProjects(fetched)
+                projects = fetched
             } catch (e: Exception) {
-                errorMessage = e.message ?: "Ошибка загрузки проектов"
+                // Если сеть недоступна — показываем кэш без сообщения об ошибке,
+                // а если кэш пуст — показываем ошибку
+                if (projects.isEmpty()) {
+                    errorMessage = e.message ?: "Ошибка загрузки проектов"
+                }
             } finally {
                 isLoading = false
             }
@@ -82,18 +82,17 @@ class ProjectsScreenModel : ScreenModel {
             isLoading = true
             errorMessage = null
             try {
-                val response = ApiClient.api.createProject(
+                val created = ApiClient.api.createProject(
                     CreateProjectRequest(
                         name = newProjectName,
                         description = newProjectDescription.ifBlank { null },
                         isPublic = true
                     )
                 )
-                // Очищаем поля и закрываем диалог
+                LocalDb.saveProject(created)
                 newProjectName = ""
                 newProjectDescription = ""
                 showCreateDialog = false
-                // Перезагружаем список
                 loadProjects()
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Ошибка создания проекта"
@@ -118,6 +117,7 @@ class ProjectsScreenModel : ScreenModel {
         screenModelScope.launch {
             try {
                 ApiClient.api.deleteProject(projectId)
+                LocalDb.deleteProject(projectId)
                 projects = projects.filter { it.id != projectId }
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Ошибка удаления"

@@ -22,6 +22,7 @@ import com.koolda.marking_lab_compose.api.CreateModelRequest
 import com.koolda.marking_lab_compose.api.FileListResponse
 import com.koolda.marking_lab_compose.api.ModelListResponse
 import com.koolda.marking_lab_compose.api.PatchProjectRequest
+import com.koolda.marking_lab_compose.db.LocalDb
 import com.koolda.marking_lab_compose.util.FilePicker
 import kotlinx.coroutines.launch
 
@@ -66,6 +67,8 @@ class ProjectDetailScreenModel(
     var newModelName by mutableStateOf("")
 
     init {
+        // Показываем кэш немедленно
+        models = LocalDb.getModels(projectId)
         loadFiles()
         loadModels()
     }
@@ -87,9 +90,13 @@ class ProjectDetailScreenModel(
         screenModelScope.launch {
             isLoadingModels = true
             try {
-                models = ApiClient.api.getModels(projectId).data
+                val fetched = ApiClient.api.getModels(projectId).data
+                LocalDb.saveModels(projectId, fetched)
+                models = fetched
             } catch (e: Exception) {
-                errorMessage = e.message ?: "Ошибка загрузки моделей"
+                if (models.isEmpty()) {
+                    errorMessage = e.message ?: "Ошибка загрузки моделей"
+                }
             } finally {
                 isLoadingModels = false
             }
@@ -178,6 +185,7 @@ class ProjectDetailScreenModel(
         screenModelScope.launch {
             try {
                 ApiClient.api.deleteModel(projectId, modelId)
+                LocalDb.deleteModel(projectId, modelId)
                 models = models.filter { it.id != modelId }
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Ошибка удаления модели"
