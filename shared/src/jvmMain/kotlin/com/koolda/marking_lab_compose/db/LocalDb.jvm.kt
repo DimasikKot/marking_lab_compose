@@ -36,8 +36,12 @@ actual object LocalDb {
                     CREATE TABLE IF NOT EXISTS models (
                         id               INTEGER PRIMARY KEY,
                         project_id       INTEGER NOT NULL,
+                        redis_id         TEXT,
                         name             TEXT    NOT NULL,
                         progress         INTEGER NOT NULL DEFAULT 0,
+                        parameters       TEXT    NOT NULL DEFAULT '{}',
+                        metrics          TEXT    NOT NULL DEFAULT '{}',
+                        graphs           TEXT    NOT NULL DEFAULT '{}',
                         training_files   TEXT    NOT NULL DEFAULT '[]',
                         prediction_files TEXT    NOT NULL DEFAULT '[]',
                         created_at       TEXT    NOT NULL DEFAULT '',
@@ -45,6 +49,35 @@ actual object LocalDb {
                     )
                     """.trimIndent()
                 )
+                stmt.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS files (
+                        id             INTEGER NOT NULL,
+                        project_id     INTEGER NOT NULL,
+                        name           TEXT    NOT NULL,
+                        total_rows     INTEGER NOT NULL DEFAULT 0,
+                        origin_file_id INTEGER,
+                        local_path     TEXT    NOT NULL DEFAULT '',
+                        is_labeled     INTEGER NOT NULL DEFAULT 0,
+                        tags           TEXT    NOT NULL DEFAULT '[]',
+                        created_at     TEXT    NOT NULL DEFAULT '',
+                        updated_at     TEXT    NOT NULL DEFAULT '',
+                        PRIMARY KEY (id, project_id)
+                    )
+                    """.trimIndent()
+                )
+                // Миграция: добавляем колонки в старые БД (SQLite не поддерживает IF NOT EXISTS для колонок)
+                listOf(
+                    "ALTER TABLE files ADD COLUMN total_rows INTEGER NOT NULL DEFAULT 0",
+                    "ALTER TABLE files ADD COLUMN origin_file_id INTEGER",
+                    "ALTER TABLE files ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'",
+                    "ALTER TABLE models ADD COLUMN redis_id TEXT",
+                    "ALTER TABLE models ADD COLUMN parameters TEXT NOT NULL DEFAULT '{}'",
+                    "ALTER TABLE models ADD COLUMN metrics TEXT NOT NULL DEFAULT '{}'",
+                    "ALTER TABLE models ADD COLUMN graphs TEXT NOT NULL DEFAULT '{}'"
+                ).forEach { sql ->
+                    try { stmt.execute(sql) } catch (_: Exception) { /* колонка уже существует */ }
+                }
             }
         }
     }
@@ -116,6 +149,7 @@ actual object LocalDb {
                     result += ModelListResponse(
                         id = rs.getInt("id"),
                         name = rs.getString("name"),
+                        redisId = rs.getString("redis_id"),
                         progress = rs.getInt("progress"),
                         trainingFiles = json.decodeFromString<List<FileListResponse>>(
                             rs.getString("training_files")
@@ -144,18 +178,19 @@ actual object LocalDb {
         connection.prepareStatement(
             """
             INSERT OR REPLACE INTO models
-                (id, project_id, name, progress, training_files, prediction_files, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (id, project_id, redis_id, name, progress, training_files, prediction_files, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent()
         ).use { stmt ->
             stmt.setInt(1, model.id)
             stmt.setInt(2, projectId)
-            stmt.setString(3, model.name)
-            stmt.setInt(4, model.progress)
-            stmt.setString(5, json.encodeToString(model.trainingFiles))
-            stmt.setString(6, json.encodeToString(model.predictionFiles))
-            stmt.setString(7, model.createdAt)
-            stmt.setString(8, model.updatedAt)
+            stmt.setString(3, model.redisId)
+            stmt.setString(4, model.name)
+            stmt.setInt(5, model.progress)
+            stmt.setString(6, json.encodeToString(model.trainingFiles))
+            stmt.setString(7, json.encodeToString(model.predictionFiles))
+            stmt.setString(8, model.createdAt)
+            stmt.setString(9, model.updatedAt)
             stmt.execute()
         }
     }
@@ -164,6 +199,100 @@ actual object LocalDb {
         connection.prepareStatement("DELETE FROM models WHERE id = ? AND project_id = ?").use { stmt ->
             stmt.setInt(1, modelId)
             stmt.setInt(2, projectId)
+            stmt.execute()
+        }
+    }
+
+    // ==================== FILES ====================
+
+    actual fun getFiles(projectId: Int): List<FileListResponse> {
+        val result = mutableListOf<FileListResponse>()
+        connection.prepareStatement(
+            "SELECT * FROM files WHERE project_id = ? ORDER BY created_at DESC"
+        ).use { stmt ->
+            stmt.setInt(1, projectId)
+            stmt.executeQuery().use { rs ->
+                while (rs.next()) {
+                    result += FileListResponse(
+                        id = rs.getInt("id"),
+                        name = rs.getString("name"),
+                        totalRows = rs.getInt("total_rows"),
+                        originFileId = rs.getObject("origin_file_id") as? Int,
+                        isLabeled = rs.getInt("is_labeled") != 0,
+                        tags = json.decodeFromString<List<String>>(rs.getString("tags")),
+                        createdAt = rs.getString("created_at"),
+                        updatedAt = rs.getString("updated_at")
+                    )
+                }
+            }
+        }
+        return result
+    }
+
+    actual fun saveFiles(projectId: Int, files: List<FileListResponse>) {
+        // Сохраняем существующие localPath перед очисткой
+        val existingPaths = mutableMapOf<Int, String>()
+        connection.prepareStatement("SELECT id, local_path FROM files WHERE project_id = ?").use { stmt ->
+            stmt.setInt(1, projectId)
+            stmt.executeQuery().use { rs ->
+                while (rs.next()) existingPaths[rs.getInt("id")] = rs.getString("local_path")
+            }
+        }
+        connection.prepareStatement("DELETE FROM files WHERE project_id = ?").use { stmt ->
+            stmt.setInt(1, projectId)
+            stmt.execute()
+        }
+        files.forEach { file ->
+            upsertFile(projectId, file, existingPaths[file.id] ?: "")
+        }
+    }
+
+    actual fun saveFileRecord(projectId: Int, file: FileListResponse, localPath: String) {
+        upsertFile(projectId, file, localPath)
+    }
+
+    actual fun deleteFileRecord(projectId: Int, fileId: Int) {
+        connection.prepareStatement("DELETE FROM files WHERE id = ? AND project_id = ?").use { stmt ->
+            stmt.setInt(1, fileId)
+            stmt.setInt(2, projectId)
+            stmt.execute()
+        }
+    }
+
+    actual fun getLocalPath(projectId: Int, fileId: Int): String? {
+        connection.prepareStatement(
+            "SELECT local_path FROM files WHERE id = ? AND project_id = ?"
+        ).use { stmt ->
+            stmt.setInt(1, fileId)
+            stmt.setInt(2, projectId)
+            stmt.executeQuery().use { rs ->
+                if (rs.next()) {
+                    val path = rs.getString("local_path")
+                    return path.ifBlank { null }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun upsertFile(projectId: Int, file: FileListResponse, localPath: String) {
+        connection.prepareStatement(
+            """
+            INSERT OR REPLACE INTO files
+                (id, project_id, name, total_rows, origin_file_id, local_path, is_labeled, tags, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent()
+        ).use { stmt ->
+            stmt.setInt(1, file.id)
+            stmt.setInt(2, projectId)
+            stmt.setString(3, file.name)
+            stmt.setInt(4, file.totalRows)
+            if (file.originFileId != null) stmt.setInt(5, file.originFileId) else stmt.setNull(5, java.sql.Types.INTEGER)
+            stmt.setString(6, localPath)
+            stmt.setInt(7, if (file.isLabeled) 1 else 0)
+            stmt.setString(8, json.encodeToString(file.tags))
+            stmt.setString(9, file.createdAt)
+            stmt.setString(10, file.updatedAt)
             stmt.execute()
         }
     }

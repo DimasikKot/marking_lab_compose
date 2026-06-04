@@ -22,6 +22,7 @@ import com.koolda.marking_lab_compose.api.CreateModelRequest
 import com.koolda.marking_lab_compose.api.FileListResponse
 import com.koolda.marking_lab_compose.api.ModelListResponse
 import com.koolda.marking_lab_compose.api.PatchProjectRequest
+import com.koolda.marking_lab_compose.db.FileStorage
 import com.koolda.marking_lab_compose.db.LocalDb
 import com.koolda.marking_lab_compose.util.FilePicker
 import kotlinx.coroutines.launch
@@ -67,7 +68,8 @@ class ProjectDetailScreenModel(
     var newModelName by mutableStateOf("")
 
     init {
-        // Показываем кэш немедленно
+        // Показываем кэш немедленно, без ожидания сети
+        files = LocalDb.getFiles(projectId)
         models = LocalDb.getModels(projectId)
         loadFiles()
         loadModels()
@@ -77,9 +79,12 @@ class ProjectDetailScreenModel(
         screenModelScope.launch {
             isLoadingFiles = true
             try {
-                files = ApiClient.api.getFiles(projectId).data
+                val fetched = ApiClient.api.getFiles(projectId).data
+                // Сохраняем в БД, сохраняя уже имеющиеся localPath
+                LocalDb.saveFiles(projectId, fetched)
+                files = fetched
             } catch (e: Exception) {
-                errorMessage = e.message ?: "Ошибка загрузки файлов"
+                if (files.isEmpty()) errorMessage = e.message ?: "Ошибка загрузки файлов"
             } finally {
                 isLoadingFiles = false
             }
@@ -107,10 +112,21 @@ class ProjectDetailScreenModel(
         screenModelScope.launch {
             isUploading = true
             try {
-                val picked = FilePicker.pickFile()
-                if (picked != null) {
-                    val (name, bytes) = picked
-                    ApiClient.uploadFile(projectId, name, bytes)
+                val picked = FilePicker.pickFile() ?: return@launch
+                val (name, bytes) = picked
+
+                // 1. Сохраняем файл локально на устройстве
+                val localPath = FileStorage.saveFile(projectId, name, bytes)
+
+                // 2. Загружаем на сервер
+                val serverFile = ApiClient.uploadFile(projectId, name, bytes)
+
+                if (serverFile != null) {
+                    // 3. Записываем в БД с серверным ID и localPath
+                    LocalDb.saveFileRecord(projectId, serverFile, localPath)
+                    files = LocalDb.getFiles(projectId)
+                } else {
+                    // Сервер не вернул объект — обновляем список с сервера
                     loadFiles()
                 }
             } catch (e: Exception) {
@@ -136,6 +152,11 @@ class ProjectDetailScreenModel(
         screenModelScope.launch {
             try {
                 ApiClient.api.deleteFile(projectId, fileId)
+                // Удаляем физический файл с устройства, если он был сохранён
+                val localPath = LocalDb.getLocalPath(projectId, fileId)
+                if (localPath != null) FileStorage.deleteFile(localPath)
+                // Удаляем запись из БД и обновляем UI
+                LocalDb.deleteFileRecord(projectId, fileId)
                 files = files.filter { it.id != fileId }
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Ошибка удаления файла"
