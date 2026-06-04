@@ -1,5 +1,6 @@
 package com.koolda.marking_lab_compose.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,6 +11,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.ScreenModel
@@ -24,6 +29,10 @@ import com.koolda.marking_lab_compose.api.PatchModelRequest
 import com.koolda.marking_lab_compose.db.LocalDb
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.koolda.marking_lab_compose.api.ModelMetrics
+import org.jetbrains.skia.Image as SkiaImage
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 data class ModelDetailScreen(
     val projectId: Int,
@@ -392,6 +401,37 @@ fun ModelDetailContent(screenModel: ModelDetailScreenModel) {
                     PredictionFileRow(file = file)
                 }
             }
+
+            // Metrics & Graphs section — shown after training completion (progress >= 200)
+            if ((currentModel?.progress ?: 0) >= 200) {
+                val metrics = currentModel?.metrics ?: ModelMetrics()
+                val graphs = currentModel?.graphs ?: emptyMap()
+                if (metrics.hasData() || graphs.isNotEmpty()) {
+                    item {
+                        Column {
+                            HorizontalDivider()
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "Результаты обучения",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                    }
+                    if (metrics.hasData()) {
+                        item { MetricsCard(metrics) }
+                    }
+                    items(
+                        graphs.entries.toList(),
+                        key = { (k, _) -> "graph_$k" }
+                    ) { (title, value) ->
+                        if (value.startsWith("data:image/")) {
+                            GraphImageCard(title = title, dataUrl = value)
+                        } else {
+                            GraphTextCard(title = title, text = value)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -510,6 +550,110 @@ fun PredictionFileRow(file: FileListResponse) {
             )
         }
     }
+}
+
+// ========== METRICS CARD ==========
+@Composable
+private fun MetricsCard(metrics: ModelMetrics) {
+    val entries = buildList {
+        metrics.accuracy?.let { add("Точность (accuracy)" to it) }
+        metrics.precision?.let { add("Точность (precision)" to it) }
+        metrics.recall?.let { add("Полнота (recall)" to it) }
+        metrics.f1?.let { add("F1-мера" to it) }
+        metrics.trainingTime?.let { add("Время обучения (сек)" to it) }
+        metrics.predictionTime?.let { add("Время разметки (сек)" to it) }
+    }
+    if (entries.isEmpty()) return
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Метрики",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.height(12.dp))
+            entries.forEachIndexed { i, (key, value) ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = key,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f).padding(end = 8.dp)
+                    )
+                    Text(
+                        text = value.formatMetric(),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                if (i < entries.size - 1) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                }
+            }
+        }
+    }
+}
+
+// ========== GRAPH IMAGE CARD ==========
+@OptIn(ExperimentalEncodingApi::class)
+@Composable
+private fun GraphImageCard(title: String, dataUrl: String) {
+    val imageBitmap: ImageBitmap? = remember(dataUrl) {
+        runCatching {
+            val base64 = dataUrl.substringAfter("base64,")
+            val bytes = Base64.Default.decode(base64)
+            SkiaImage.makeFromEncoded(bytes).toComposeImageBitmap()
+        }.getOrNull()
+    }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            if (imageBitmap != null) {
+                Spacer(Modifier.height(8.dp))
+                Image(
+                    bitmap = imageBitmap,
+                    contentDescription = title,
+                    modifier = Modifier.fillMaxWidth(),
+                    contentScale = ContentScale.FillWidth
+                )
+            }
+        }
+    }
+}
+
+// ========== GRAPH TEXT CARD ==========
+@Composable
+private fun GraphTextCard(title: String, text: String) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+private fun Double.formatMetric(): String {
+    val s = toString()
+    val dot = s.indexOf('.')
+    return if (dot >= 0 && s.length - dot > 5) s.substring(0, dot + 5) else s
 }
 
 // ========== ADD TRAINING FILES DIALOG ==========
