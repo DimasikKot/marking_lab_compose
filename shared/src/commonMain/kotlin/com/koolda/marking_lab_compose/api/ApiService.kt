@@ -30,6 +30,18 @@ import kotlinx.serialization.json.Json
 // ==================== Data Models ====================
 
 @Serializable
+data class ModelMetrics(
+    @SerialName("Точность (accuracy)") val accuracy: Double? = null,
+    @SerialName("Точность (precision)") val precision: Double? = null,
+    @SerialName("Полнота (recall)") val recall: Double? = null,
+    @SerialName("F1-мера") val f1: Double? = null,
+    @SerialName("Время обучения (сек)") val trainingTime: Double? = null,
+    @SerialName("Время разметки (сек)") val predictionTime: Double? = null
+) {
+    fun hasData() = accuracy != null || f1 != null || trainingTime != null
+}
+
+@Serializable
 data class ProjectDbResponse(
     val id: Int,
     val name: String,
@@ -76,9 +88,10 @@ data class ModelListResponse(
     val id: Int,
     val name: String,
     @SerialName("redis_id") val redisId: String? = null,
-    // 0-100: прогресс обучения; 100-200: прогресс предсказания
+    // 0-100: обучение; 100-200: предсказание; >=200: завершено
     val progress: Int = 0,
-    // parameters, metrics, graphs — произвольный JSONB, игнорируем (ignoreUnknownKeys = true)
+    val metrics: ModelMetrics = ModelMetrics(),
+    val graphs: Map<String, String> = emptyMap(),
     @SerialName("training_files") val trainingFiles: List<FileListResponse> = emptyList(),
     @SerialName("prediction_files") val predictionFiles: List<FileListResponse> = emptyList(),
     @SerialName("predicted_files") val predictedFiles: List<FileListResponse> = emptyList(),
