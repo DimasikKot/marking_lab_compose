@@ -103,15 +103,22 @@ class ProjectsScreenModel : ScreenModel {
         }
     }
 
-    fun onProjectClick(projectId: Int, navigator: Navigator?) {
-//        navigator?.push(ProjectDetailsScreen(projectId))
+    fun onProjectClick(project: ProjectDbResponse, navigator: Navigator?) {
+        navigator?.push(
+            ProjectDetailScreen(
+                projectId = project.id,
+                projectName = project.name,
+                projectDescription = project.description,
+                projectIsPublic = project.isPublic
+            )
+        )
     }
 
     fun deleteProject(projectId: Int) {
         screenModelScope.launch {
             try {
-//                ApiClient.api.deletePro(projectId)
-//                projects = projects.filter { it.id != projectId }
+                ApiClient.api.deleteProject(projectId)
+                projects = projects.filter { it.id != projectId }
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Ошибка удаления"
             }
@@ -186,7 +193,7 @@ fun ProjectsContent(screenModel: ProjectsScreenModel) {
                     items(screenModel.projects, key = { it.id }) { project ->
                         ProjectCard(
                             project = project,
-                            onClick = { screenModel.onProjectClick(project.id, navigator) },
+                            onClick = { screenModel.onProjectClick(project, navigator) },
                             onDelete = { screenModel.deleteProject(project.id) }
                         )
                     }

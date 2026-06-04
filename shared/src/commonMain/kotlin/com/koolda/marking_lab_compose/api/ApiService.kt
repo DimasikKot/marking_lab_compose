@@ -3,15 +3,24 @@ package com.koolda.marking_lab_compose.api
 import com.koolda.marking_lab_compose.util.TokenManager
 import de.jensklingenberg.ktorfit.Ktorfit
 import de.jensklingenberg.ktorfit.http.Body
+import de.jensklingenberg.ktorfit.http.DELETE
 import de.jensklingenberg.ktorfit.http.GET
 import de.jensklingenberg.ktorfit.http.Headers
 import de.jensklingenberg.ktorfit.http.POST
 import de.jensklingenberg.ktorfit.http.Path
 import de.jensklingenberg.ktorfit.http.Query
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.plugins.DefaultRequest
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.forms.formData
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -103,6 +112,11 @@ data class CreateModelRequest(
     val name: String
 )
 
+@Serializable
+data class AddTrainingFilesRequest(
+    @SerialName("file_ids") val fileIds: List<Int>
+)
+
 // ==================== Response Wrappers ====================
 
 @Serializable
@@ -165,10 +179,19 @@ interface MarkingLabApi {
         @Path("id") projectId: Int, @Body request: PatchProjectRequest
     ): ProjectDbResponse
 
+    @DELETE("projects/{id}")
+    suspend fun deleteProject(@Path("id") projectId: Int)
+
     // Files endpoints
     @Headers("Content-Type: application/json")
     @GET("projects/{projectId}/files")
     suspend fun getFiles(@Path("projectId") projectId: Int): FilesResponse
+
+    @DELETE("projects/{projectId}/files/{fileId}")
+    suspend fun deleteFile(
+        @Path("projectId") projectId: Int,
+        @Path("fileId") fileId: Int
+    )
 
     // Models endpoints
     @Headers("Content-Type: application/json")
@@ -176,9 +199,43 @@ interface MarkingLabApi {
     suspend fun getModels(@Path("projectId") projectId: Int): ModelsResponse
 
     @Headers("Content-Type: application/json")
+    @GET("projects/{projectId}/models/{modelId}")
+    suspend fun getModel(
+        @Path("projectId") projectId: Int,
+        @Path("modelId") modelId: Int
+    ): ModelListResponse
+
+    @Headers("Content-Type: application/json")
     @POST("projects/{projectId}/models")
     suspend fun createModel(
         @Path("projectId") projectId: Int, @Body request: CreateModelRequest
+    ): ModelListResponse
+
+    @DELETE("projects/{projectId}/models/{modelId}")
+    suspend fun deleteModel(
+        @Path("projectId") projectId: Int,
+        @Path("modelId") modelId: Int
+    )
+
+    @Headers("Content-Type: application/json")
+    @POST("projects/{projectId}/models/{modelId}/training-files")
+    suspend fun addTrainingFiles(
+        @Path("projectId") projectId: Int,
+        @Path("modelId") modelId: Int,
+        @Body request: AddTrainingFilesRequest
+    ): ModelListResponse
+
+    @DELETE("projects/{projectId}/models/{modelId}/training-files/{fileId}")
+    suspend fun removeTrainingFile(
+        @Path("projectId") projectId: Int,
+        @Path("modelId") modelId: Int,
+        @Path("fileId") fileId: Int
+    )
+
+    @POST("projects/{projectId}/models/{modelId}/train")
+    suspend fun trainModel(
+        @Path("projectId") projectId: Int,
+        @Path("modelId") modelId: Int
     ): ModelListResponse
 }
 
@@ -208,5 +265,29 @@ object ApiClient {
 
     val api: MarkingLabApi by lazy {
         ktorfit.create<MarkingLabApi>()
+    }
+
+    suspend fun uploadFile(projectId: Int, fileName: String, fileBytes: ByteArray): FileListResponse {
+        val response = httpClient.post("${BASE_URL}projects/$projectId/files") {
+            header(HttpHeaders.Authorization, "Bearer ${TokenManager.accessToken}")
+            setBody(
+                MultiPartFormDataContent(formData {
+                    append("file", fileBytes, io.ktor.http.Headers.build {
+                        append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
+                        append(HttpHeaders.ContentType, ContentType.Application.OctetStream.toString())
+                    })
+                })
+            )
+        }
+        return response.body()
+    }
+
+    suspend fun downloadFile(projectId: Int, fileId: Int): Pair<String, ByteArray> {
+        val response = httpClient.get("${BASE_URL}projects/$projectId/files/$fileId/download") {
+            header(HttpHeaders.Authorization, "Bearer ${TokenManager.accessToken}")
+        }
+        val contentDisposition = response.headers[HttpHeaders.ContentDisposition]
+        val fileName = contentDisposition?.substringAfter("filename=")?.trim('"') ?: "file_$fileId"
+        return Pair(fileName, response.body())
     }
 }
