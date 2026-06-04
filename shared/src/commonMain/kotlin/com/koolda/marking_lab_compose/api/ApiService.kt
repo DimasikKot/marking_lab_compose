@@ -20,6 +20,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
+import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.SerialName
@@ -314,7 +315,10 @@ object ApiClient {
                 MultiPartFormDataContent(formData {
                     append("name", fileName)
                     append("is_labeled", "false")
-                    append("file", fileBytes)
+                    append("file", fileBytes, Headers.build {
+                        append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
+                        append(HttpHeaders.ContentType, "application/octet-stream")
+                    })
                 })
             )
         }
