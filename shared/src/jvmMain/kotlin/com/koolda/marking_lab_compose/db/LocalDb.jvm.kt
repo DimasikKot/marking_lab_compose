@@ -2,6 +2,7 @@ package com.koolda.marking_lab_compose.db
 
 import com.koolda.marking_lab_compose.api.FileListResponse
 import com.koolda.marking_lab_compose.api.ModelListResponse
+import com.koolda.marking_lab_compose.api.OriginFileResponse
 import com.koolda.marking_lab_compose.api.ProjectDbResponse
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
@@ -213,13 +214,15 @@ actual object LocalDb {
             stmt.setInt(1, projectId)
             stmt.executeQuery().use { rs ->
                 while (rs.next()) {
+                    val originFileId = rs.getObject("origin_file_id") as? Int
                     result += FileListResponse(
                         id = rs.getInt("id"),
                         name = rs.getString("name"),
                         totalRows = rs.getInt("total_rows"),
-                        originFileId = rs.getObject("origin_file_id") as? Int,
+                        originFile = originFileId?.let {
+                            OriginFileResponse(id = it, name = "")
+                        },
                         isLabeled = rs.getInt("is_labeled") != 0,
-                        tags = json.decodeFromString<List<String>>(rs.getString("tags")),
                         createdAt = rs.getString("created_at"),
                         updatedAt = rs.getString("updated_at")
                     )
@@ -279,20 +282,20 @@ actual object LocalDb {
         connection.prepareStatement(
             """
             INSERT OR REPLACE INTO files
-                (id, project_id, name, total_rows, origin_file_id, local_path, is_labeled, tags, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, project_id, name, total_rows, origin_file_id, local_path, is_labeled, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent()
         ).use { stmt ->
             stmt.setInt(1, file.id)
             stmt.setInt(2, projectId)
             stmt.setString(3, file.name)
             stmt.setInt(4, file.totalRows)
-            if (file.originFileId != null) stmt.setInt(5, file.originFileId) else stmt.setNull(5, java.sql.Types.INTEGER)
+            val originId = file.originFile?.id
+            if (originId != null) stmt.setInt(5, originId) else stmt.setNull(5, java.sql.Types.INTEGER)
             stmt.setString(6, localPath)
             stmt.setInt(7, if (file.isLabeled) 1 else 0)
-            stmt.setString(8, json.encodeToString(file.tags))
-            stmt.setString(9, file.createdAt)
-            stmt.setString(10, file.updatedAt)
+            stmt.setString(8, file.createdAt)
+            stmt.setString(9, file.updatedAt)
             stmt.execute()
         }
     }
