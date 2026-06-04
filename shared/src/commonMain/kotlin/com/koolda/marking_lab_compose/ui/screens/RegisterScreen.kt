@@ -26,19 +26,14 @@ import kotlinx.coroutines.launch
 class RegisterScreen : Screen {
     @Composable
     override fun Content() {
-        // 2. Теперь мы внутри Screen, и rememberScreenModel доступен!
         val screenModel = rememberScreenModel { RegisterScreenModel() }
-
-        // Вызываем ваш UI контент
         RegisterContent(screenModel)
     }
 }
 
 sealed class RegisterStep {
     object Username : RegisterStep()
-
     object Email : RegisterStep()
-
     object Password : RegisterStep()
 }
 
@@ -58,11 +53,10 @@ class RegisterScreenModel : ScreenModel {
                         errorMessage = "Введите имя пользователя"
                         return@launch
                     }
-
                     isLoading = true
                     try {
                         ApiClient.api.validateUsername(ValidateUsernameRequest(username))
-                        step = RegisterStep.Password
+                        step = RegisterStep.Email
                         errorMessage = null
                     } catch (e: Exception) {
                         errorMessage = e.message
@@ -73,13 +67,12 @@ class RegisterScreenModel : ScreenModel {
 
                 is RegisterStep.Email -> {
                     if (email.isBlank()) {
-                        errorMessage = "Введите электронную почту'"
+                        errorMessage = "Введите электронную почту"
                         return@launch
                     }
-
                     isLoading = true
                     try {
-                        ApiClient.api.validateEmail(ValidateEmailRequest(username))
+                        ApiClient.api.validateEmail(ValidateEmailRequest(email))
                         step = RegisterStep.Password
                         errorMessage = null
                     } catch (e: Exception) {
@@ -94,7 +87,6 @@ class RegisterScreenModel : ScreenModel {
                         errorMessage = "Введите пароль"
                         return@launch
                     }
-
                     isLoading = true
                     try {
                         val response = ApiClient.api.register(RegisterRequest(username, email, password))
@@ -112,12 +104,10 @@ class RegisterScreenModel : ScreenModel {
     }
 
     fun handleBack() {
-        if (step is RegisterStep.Email) {
-            step = RegisterStep.Username
-        }
-
-        if (step is RegisterStep.Password) {
-            step = RegisterStep.Email
+        when (step) {
+            is RegisterStep.Email -> step = RegisterStep.Username
+            is RegisterStep.Password -> step = RegisterStep.Email
+            else -> {}
         }
     }
 }
@@ -128,14 +118,19 @@ fun RegisterContent(screenModel: RegisterScreenModel) {
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Вход") }, navigationIcon = {
-                IconButton(onClick = { navigator.pop() }) {
-                    Icon(Icons.Default.ArrowCircleLeft, contentDescription = "Назад")
+            TopAppBar(
+                title = { Text("Регистрация") },
+                navigationIcon = {
+                    IconButton(onClick = { navigator.pop() }) {
+                        Icon(Icons.Default.ArrowCircleLeft, contentDescription = "Назад")
+                    }
                 }
-            })
-        }) { paddingValues ->
+            )
+        }
+    ) { paddingValues ->
         Box(
-            modifier = Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center
+            modifier = Modifier.fillMaxSize().padding(paddingValues),
+            contentAlignment = Alignment.Center
         ) {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(16.dp).widthIn(max = 400.dp),
@@ -148,20 +143,20 @@ fun RegisterContent(screenModel: RegisterScreenModel) {
                     when (screenModel.step) {
                         is RegisterStep.Username -> {
                             Text(
-                                text = "Регистрация аккаунта", style = MaterialTheme.typography.titleLarge
+                                text = "Регистрация аккаунта",
+                                style = MaterialTheme.typography.titleLarge
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Придумайте имя пользователя или email",
+                                text = "Придумайте имя пользователя",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(24.dp))
-
                             OutlinedTextField(
                                 value = screenModel.username,
                                 onValueChange = { screenModel.username = it },
-                                label = { Text("Имя пользователя или email") },
+                                label = { Text("Имя пользователя") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                                 enabled = !screenModel.isLoading
@@ -170,29 +165,8 @@ fun RegisterContent(screenModel: RegisterScreenModel) {
 
                         is RegisterStep.Email -> {
                             Text(
-                                text = "Регистрация почты", style = MaterialTheme.typography.titleLarge
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Придумайте имя пользователя или email",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            OutlinedTextField(
-                                value = screenModel.username,
-                                onValueChange = { screenModel.username = it },
-                                label = { Text("Имя пользователя или email") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                enabled = !screenModel.isLoading
-                            )
-                        }
-
-                        is RegisterStep.Password -> {
-                            Text(
-                                text = "Придумайте пароль", style = MaterialTheme.typography.titleLarge
+                                text = "Электронная почта",
+                                style = MaterialTheme.typography.titleLarge
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
@@ -201,7 +175,28 @@ fun RegisterContent(screenModel: RegisterScreenModel) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(24.dp))
+                            OutlinedTextField(
+                                value = screenModel.email,
+                                onValueChange = { screenModel.email = it },
+                                label = { Text("Email") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !screenModel.isLoading
+                            )
+                        }
 
+                        is RegisterStep.Password -> {
+                            Text(
+                                text = "Придумайте пароль",
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Для аккаунта: ${screenModel.username}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
                             OutlinedTextField(
                                 value = screenModel.password,
                                 onValueChange = { screenModel.password = it },
@@ -226,9 +221,10 @@ fun RegisterContent(screenModel: RegisterScreenModel) {
                     Spacer(modifier = Modifier.height(24.dp))
 
                     Row(
-                        modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        if (screenModel.step is RegisterStep.Password) {
+                        if (screenModel.step !is RegisterStep.Username) {
                             TextButton(onClick = { screenModel.handleBack() }) {
                                 Text("Назад")
                             }
@@ -237,19 +233,21 @@ fun RegisterContent(screenModel: RegisterScreenModel) {
                         }
 
                         Button(
-                            onClick = { screenModel.handleNext(navigator) }, enabled = !screenModel.isLoading
+                            onClick = { screenModel.handleNext(navigator) },
+                            enabled = !screenModel.isLoading
                         ) {
                             if (screenModel.isLoading) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onPrimary
+                                    modifier = Modifier.size(16.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                             }
                             Text(
                                 when (screenModel.step) {
-                                    is RegisterStep.Username -> "Далее"
-                                    is RegisterStep.Email -> "Далее"
-                                    is RegisterStep.Password -> if (screenModel.isLoading) "Регистрируем..." else "Зарегистрироваться"
+                                    is RegisterStep.Password ->
+                                        if (screenModel.isLoading) "Регистрируем..." else "Зарегистрироваться"
+                                    else -> "Далее"
                                 }
                             )
                         }
@@ -258,7 +256,7 @@ fun RegisterContent(screenModel: RegisterScreenModel) {
                     Spacer(modifier = Modifier.height(16.dp))
 
                     TextButton(onClick = { navigator.push(LoginScreen()) }) {
-                        Text("Нет аккаунта? Зарегистрироваться")
+                        Text("Уже есть аккаунт? Войти")
                     }
                 }
             }
