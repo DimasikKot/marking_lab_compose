@@ -22,6 +22,7 @@ import com.koolda.marking_lab_compose.api.ApiClient
 import com.koolda.marking_lab_compose.api.FileListResponse
 import com.koolda.marking_lab_compose.api.ModelListResponse
 import com.koolda.marking_lab_compose.api.UpdateModelRequest
+import com.koolda.marking_lab_compose.db.LocalDb
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -58,6 +59,8 @@ class ModelDetailScreenModel(
     var editName by mutableStateOf(initialName)
 
     init {
+        // Показываем кэш немедленно
+        model = LocalDb.getModels(projectId).find { it.id == modelId }
         loadModel()
         loadProjectFiles()
     }
@@ -66,9 +69,13 @@ class ModelDetailScreenModel(
         screenModelScope.launch {
             isLoading = true
             try {
-                model = ApiClient.api.getModel(projectId, modelId)
+                val fetched = ApiClient.api.getModel(projectId, modelId)
+                LocalDb.saveModel(projectId, fetched)
+                model = fetched
             } catch (e: Exception) {
-                errorMessage = e.message ?: "Ошибка загрузки модели"
+                if (model == null) {
+                    errorMessage = e.message ?: "Ошибка загрузки модели"
+                }
             } finally {
                 isLoading = false
             }
@@ -87,9 +94,11 @@ class ModelDetailScreenModel(
     fun addTrainingFiles(fileIds: List<Int>) {
         screenModelScope.launch {
             try {
-                model = ApiClient.api.addTrainingFiles(
+                val updated = ApiClient.api.addTrainingFiles(
                     projectId, modelId, AddTrainingFilesRequest(fileIds)
                 )
+                LocalDb.saveModel(projectId, updated)
+                model = updated
                 showAddFilesDialog = false
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Ошибка добавления файлов"
@@ -112,7 +121,9 @@ class ModelDetailScreenModel(
         screenModelScope.launch {
             isTraining = true
             try {
-                model = ApiClient.api.trainModel(projectId, modelId)
+                val started = ApiClient.api.trainModel(projectId, modelId)
+                LocalDb.saveModel(projectId, started)
+                model = started
                 pollProgress()
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Ошибка запуска обучения"
@@ -130,6 +141,7 @@ class ModelDetailScreenModel(
             delay(3000)
             try {
                 val updated = ApiClient.api.getModel(projectId, modelId)
+                LocalDb.saveModel(projectId, updated)
                 model = updated
                 if (updated.progress >= 100) {
                     isTraining = false
@@ -147,6 +159,8 @@ class ModelDetailScreenModel(
         screenModelScope.launch {
             try {
                 ApiClient.api.updateModel(projectId, modelId, UpdateModelRequest(editName))
+                val updated = model?.copy(name = editName)
+                if (updated != null) LocalDb.saveModel(projectId, updated)
                 currentName = editName
                 showRenameDialog = false
             } catch (e: Exception) {

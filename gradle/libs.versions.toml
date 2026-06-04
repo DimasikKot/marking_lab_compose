@@ -1,5 +1,6 @@
 [versions]
 androidx-lifecycle = "2.11.0-beta01"
+sqlite-jdbc = "3.45.3.0"
 composeMultiplatform = "1.11.0"
 junit = "4.13.2"
 kotlin = "2.3.21"
@@ -35,6 +36,7 @@ ktor-client-js = { module = "io.ktor:ktor-client-js", version = "3.1.3" }
 ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version = "3.1.3" }
 ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version = "3.1.3" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version = "1.8.1" }
+sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite-jdbc" }
 
 [plugins]
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
