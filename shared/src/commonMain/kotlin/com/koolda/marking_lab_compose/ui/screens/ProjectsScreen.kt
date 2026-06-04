@@ -85,8 +85,7 @@ class ProjectsScreenModel : ScreenModel {
                 val created = ApiClient.api.createProject(
                     CreateProjectRequest(
                         name = newProjectName,
-                        description = newProjectDescription.ifBlank { null },
-                        isPublic = true
+                        description = newProjectDescription
                     )
                 )
                 LocalDb.saveProject(created)

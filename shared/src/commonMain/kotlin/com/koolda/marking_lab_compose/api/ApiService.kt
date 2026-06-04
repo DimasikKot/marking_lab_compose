@@ -6,6 +6,7 @@ import de.jensklingenberg.ktorfit.http.Body
 import de.jensklingenberg.ktorfit.http.DELETE
 import de.jensklingenberg.ktorfit.http.GET
 import de.jensklingenberg.ktorfit.http.Headers
+import de.jensklingenberg.ktorfit.http.PATCH
 import de.jensklingenberg.ktorfit.http.POST
 import de.jensklingenberg.ktorfit.http.Path
 import de.jensklingenberg.ktorfit.http.Query
@@ -31,13 +32,22 @@ import kotlinx.serialization.json.Json
 data class ProjectDbResponse(
     val id: Int,
     val name: String,
-    val description: String,
-    @SerialName("is_public") val isPublic: Boolean,
-    @SerialName("created_at") val createdAt: String,
-    @SerialName("updated_at") val updatedAt: String
+    val description: String = "",
+    @SerialName("is_public") val isPublic: Boolean = false,
+    @SerialName("created_at") val createdAt: String = "",
+    @SerialName("updated_at") val updatedAt: String = ""
 )
 
-// Вложенный объект origin_file, возвращаемый GET /files
+// Модель, которая предсказала файл (вложена в FileListResponse)
+@Serializable
+data class PredictionModelResponse(
+    val id: Int,
+    val name: String,
+    @SerialName("created_at") val createdAt: String = "",
+    @SerialName("updated_at") val updatedAt: String = ""
+)
+
+// Вложенный объект origin_file (исходный файл для предсказания)
 @Serializable
 data class OriginFileResponse(
     val id: Int,
@@ -53,8 +63,8 @@ data class FileListResponse(
     val id: Int,
     val name: String,
     @SerialName("total_rows") val totalRows: Int = 0,
-    // Сервер возвращает вложенный объект origin_file, а не origin_file_id
     @SerialName("origin_file") val originFile: OriginFileResponse? = null,
+    @SerialName("prediction_model") val predictionModel: PredictionModelResponse? = null,
     @SerialName("is_labeled") val isLabeled: Boolean = false,
     @SerialName("created_at") val createdAt: String = "",
     @SerialName("updated_at") val updatedAt: String = ""
@@ -65,10 +75,12 @@ data class ModelListResponse(
     val id: Int,
     val name: String,
     @SerialName("redis_id") val redisId: String? = null,
+    // 0-100: прогресс обучения; 100-200: прогресс предсказания
     val progress: Int = 0,
-    // parameters, metrics, graphs — произвольный JSONB, сохраняем отдельно через LocalDb
+    // parameters, metrics, graphs — произвольный JSONB, игнорируем (ignoreUnknownKeys = true)
     @SerialName("training_files") val trainingFiles: List<FileListResponse> = emptyList(),
     @SerialName("prediction_files") val predictionFiles: List<FileListResponse> = emptyList(),
+    @SerialName("predicted_files") val predictedFiles: List<FileListResponse> = emptyList(),
     @SerialName("created_at") val createdAt: String = "",
     @SerialName("updated_at") val updatedAt: String = ""
 )
@@ -98,71 +110,62 @@ data class LoginRequest(
 )
 
 @Serializable
-data class ValidateUsernameRequest(
-    val username: String
-)
+data class ValidateUsernameRequest(val username: String)
 
 @Serializable
-data class ValidateEmailRequest(
-    val email: String
-)
+data class ValidateEmailRequest(val email: String)
 
 @Serializable
-data class ValidateLoginRequest(
-    val login: String
-)
+data class ValidateLoginRequest(val login: String)
 
+// POST /projects — is_public не принимается при создании (default FALSE на сервере)
 @Serializable
 data class CreateProjectRequest(
-    val name: String, val description: String?, @SerialName("is_public") val isPublic: Boolean
+    val name: String,
+    val description: String = ""
 )
 
+// PATCH /projects/{id} — все поля опциональны (partial update)
 @Serializable
 data class PatchProjectRequest(
-    val name: String, val description: String, @SerialName("is_public") val isPublic: Boolean
+    val name: String? = null,
+    val description: String? = null,
+    @SerialName("is_public") val isPublic: Boolean? = null
 )
 
+// POST /projects/{id}/models — файлы можно передать сразу при создании
 @Serializable
 data class CreateModelRequest(
-    val name: String
+    val name: String,
+    @SerialName("training_files_ids") val trainingFilesIds: List<Int>? = null,
+    @SerialName("prediction_files_ids") val predictionFilesIds: List<Int>? = null
 )
 
+// PATCH /projects/{id}/models/{id} — все поля опциональны
 @Serializable
-data class UpdateModelRequest(
-    val name: String
-)
-
-@Serializable
-data class AddTrainingFilesRequest(
-    @SerialName("file_ids") val fileIds: List<Int>
+data class PatchModelRequest(
+    val name: String? = null,
+    @SerialName("training_files_ids") val trainingFilesIds: List<Int>? = null,
+    @SerialName("prediction_files_ids") val predictionFilesIds: List<Int>? = null
 )
 
 // ==================== Response Wrappers ====================
 
 @Serializable
-data class ProjectsResponse(
-    val data: List<ProjectDbResponse>
-)
+data class ProjectsResponse(val data: List<ProjectDbResponse>)
 
 @Serializable
-data class FilesResponse(
-    val data: List<FileListResponse>
-)
+data class FilesResponse(val data: List<FileListResponse>)
 
 @Serializable
-data class SingleFileResponse(
-    val data: FileListResponse? = null
-)
-
-@Serializable
-data class ModelsResponse(
-    val data: List<ModelListResponse>
-)
+data class ModelsResponse(val data: List<ModelListResponse>)
 
 // ==================== API Interface ====================
 
 interface MarkingLabApi {
-    // Auth endpoints
+
+    // ── Auth ──────────────────────────────────────────────────────────────────
+
     @Headers("Content-Type: application/json")
     @POST("users/")
     suspend fun register(@Body request: RegisterRequest): UserResponse
@@ -183,11 +186,13 @@ interface MarkingLabApi {
     @POST("users/validate-login")
     suspend fun validateLogin(@Body request: ValidateLoginRequest): ValidateResponse
 
-    // Projects endpoints
+    // ── Projects ──────────────────────────────────────────────────────────────
+
     @Headers("Content-Type: application/json")
     @GET("projects")
     suspend fun getProjects(
-        @Query("sort") sort: String? = null, @Query("search") search: String? = null
+        @Query("sort") sort: String? = null,
+        @Query("search") search: String? = null
     ): ProjectsResponse
 
     @Headers("Content-Type: application/json")
@@ -198,16 +203,19 @@ interface MarkingLabApi {
     @GET("projects/{id}")
     suspend fun getProjectById(@Path("id") projectId: Int): ProjectDbResponse
 
+    // Сервер принимает PATCH, не POST
     @Headers("Content-Type: application/json")
-    @POST("projects/{id}")
+    @PATCH("projects/{id}")
     suspend fun updateProject(
-        @Path("id") projectId: Int, @Body request: PatchProjectRequest
-    ): Unit
+        @Path("id") projectId: Int,
+        @Body request: PatchProjectRequest
+    ): ProjectDbResponse
 
     @DELETE("projects/{id}")
     suspend fun deleteProject(@Path("id") projectId: Int)
 
-    // Files endpoints
+    // ── Files ─────────────────────────────────────────────────────────────────
+
     @Headers("Content-Type: application/json")
     @GET("projects/{projectId}/files")
     suspend fun getFiles(@Path("projectId") projectId: Int): FilesResponse
@@ -218,7 +226,8 @@ interface MarkingLabApi {
         @Path("fileId") fileId: Int
     )
 
-    // Models endpoints
+    // ── Models ────────────────────────────────────────────────────────────────
+
     @Headers("Content-Type: application/json")
     @GET("projects/{projectId}/models")
     suspend fun getModels(@Path("projectId") projectId: Int): ModelsResponse
@@ -233,16 +242,18 @@ interface MarkingLabApi {
     @Headers("Content-Type: application/json")
     @POST("projects/{projectId}/models")
     suspend fun createModel(
-        @Path("projectId") projectId: Int, @Body request: CreateModelRequest
+        @Path("projectId") projectId: Int,
+        @Body request: CreateModelRequest
     ): ModelListResponse
 
+    // Сервер принимает PATCH, не POST. Используется для переименования И управления файлами.
     @Headers("Content-Type: application/json")
-    @POST("projects/{projectId}/models/{modelId}")
+    @PATCH("projects/{projectId}/models/{modelId}")
     suspend fun updateModel(
         @Path("projectId") projectId: Int,
         @Path("modelId") modelId: Int,
-        @Body request: UpdateModelRequest
-    ): Unit
+        @Body request: PatchModelRequest
+    ): ModelListResponse
 
     @DELETE("projects/{projectId}/models/{modelId}")
     suspend fun deleteModel(
@@ -250,23 +261,16 @@ interface MarkingLabApi {
         @Path("modelId") modelId: Int
     )
 
-    @Headers("Content-Type: application/json")
-    @POST("projects/{projectId}/models/{modelId}/training-files")
-    suspend fun addTrainingFiles(
+    // Запуск обучения — GET, не POST
+    @GET("projects/{projectId}/models/{modelId}/train")
+    suspend fun trainModel(
         @Path("projectId") projectId: Int,
-        @Path("modelId") modelId: Int,
-        @Body request: AddTrainingFilesRequest
+        @Path("modelId") modelId: Int
     ): ModelListResponse
 
-    @DELETE("projects/{projectId}/models/{modelId}/training-files/{fileId}")
-    suspend fun removeTrainingFile(
-        @Path("projectId") projectId: Int,
-        @Path("modelId") modelId: Int,
-        @Path("fileId") fileId: Int
-    )
-
-    @POST("projects/{projectId}/models/{modelId}/train")
-    suspend fun trainModel(
+    // Остановка обучения
+    @DELETE("projects/{projectId}/models/{modelId}/train")
+    suspend fun stopTraining(
         @Path("projectId") projectId: Int,
         @Path("modelId") modelId: Int
     ): ModelListResponse
@@ -300,24 +304,24 @@ object ApiClient {
         ktorfit.create<MarkingLabApi>()
     }
 
+    // POST /projects/{id}/files
+    // Сервер требует Form(...) поля: name, is_labeled + file
+    // Возвращает FileDbResponse напрямую (без обёртки {"data": ...})
     suspend fun uploadFile(projectId: Int, fileName: String, fileBytes: ByteArray): FileListResponse? {
         val response = httpClient.post("${BASE_URL}projects/$projectId/files") {
             header(HttpHeaders.Authorization, "Bearer ${TokenManager.accessToken}")
             setBody(
                 MultiPartFormDataContent(formData {
-                    // name и is_labeled — обязательные Form(...) поля на сервере
                     append("name", fileName)
                     append("is_labeled", "false")
-                    // file — сам бинарный контент (FastAPI читает через UploadFile,
-                    // filename берётся из form-поля "name", не из Content-Disposition)
                     append("file", fileBytes)
                 })
             )
         }
-        // Сервер возвращает FileDbResponse напрямую (без обёртки {"data": ...})
         return runCatching { response.body<FileListResponse>() }.getOrNull()
     }
 
+    // GET /projects/{id}/files/{fileId}/download
     suspend fun downloadFile(projectId: Int, fileId: Int): Pair<String, ByteArray> {
         val response = httpClient.get("${BASE_URL}projects/$projectId/files/$fileId/download") {
             header(HttpHeaders.Authorization, "Bearer ${TokenManager.accessToken}")
