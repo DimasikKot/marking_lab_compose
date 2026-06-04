@@ -17,11 +17,10 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
-import com.koolda.marking_lab_compose.api.AddTrainingFilesRequest
 import com.koolda.marking_lab_compose.api.ApiClient
 import com.koolda.marking_lab_compose.api.FileListResponse
 import com.koolda.marking_lab_compose.api.ModelListResponse
-import com.koolda.marking_lab_compose.api.UpdateModelRequest
+import com.koolda.marking_lab_compose.api.PatchModelRequest
 import com.koolda.marking_lab_compose.db.LocalDb
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -91,11 +90,14 @@ class ModelDetailScreenModel(
         }
     }
 
+    // Добавить файлы в обучение через PATCH /models/{id}
     fun addTrainingFiles(fileIds: List<Int>) {
         screenModelScope.launch {
             try {
-                val updated = ApiClient.api.addTrainingFiles(
-                    projectId, modelId, AddTrainingFilesRequest(fileIds)
+                val currentIds = model?.trainingFiles?.map { it.id } ?: emptyList()
+                val newIds = (currentIds + fileIds).distinct()
+                val updated = ApiClient.api.updateModel(
+                    projectId, modelId, PatchModelRequest(trainingFilesIds = newIds)
                 )
                 LocalDb.saveModel(projectId, updated)
                 model = updated
@@ -106,17 +108,26 @@ class ModelDetailScreenModel(
         }
     }
 
+    // Убрать файл из обучения через PATCH /models/{id}
     fun removeTrainingFile(fileId: Int) {
         screenModelScope.launch {
             try {
-                ApiClient.api.removeTrainingFile(projectId, modelId, fileId)
-                loadModel()
+                val newIds = model?.trainingFiles
+                    ?.filter { it.id != fileId }
+                    ?.map { it.id }
+                    ?: emptyList()
+                val updated = ApiClient.api.updateModel(
+                    projectId, modelId, PatchModelRequest(trainingFilesIds = newIds)
+                )
+                LocalDb.saveModel(projectId, updated)
+                model = updated
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Ошибка удаления файла из обучения"
             }
         }
     }
 
+    // Запуск — GET /models/{id}/train
     fun startTraining() {
         screenModelScope.launch {
             isTraining = true
@@ -132,8 +143,24 @@ class ModelDetailScreenModel(
         }
     }
 
+    // Остановка — DELETE /models/{id}/train
+    fun stopTraining() {
+        screenModelScope.launch {
+            try {
+                val updated = ApiClient.api.stopTraining(projectId, modelId)
+                LocalDb.saveModel(projectId, updated)
+                model = updated
+            } catch (e: Exception) {
+                errorMessage = e.message ?: "Ошибка остановки обучения"
+            } finally {
+                isTraining = false
+            }
+        }
+    }
+
     private suspend fun pollProgress() {
-        if ((model?.progress ?: 0) >= 100) {
+        // progress 0-100: обучение; 100-200: предсказание; >=200: всё готово
+        if ((model?.progress ?: 0) >= 200) {
             isTraining = false
             return
         }
@@ -143,14 +170,13 @@ class ModelDetailScreenModel(
                 val updated = ApiClient.api.getModel(projectId, modelId)
                 LocalDb.saveModel(projectId, updated)
                 model = updated
-                if (updated.progress >= 100) {
-                    isTraining = false
-                }
+                if (updated.progress >= 200) isTraining = false
             } catch (_: Exception) {
             }
         }
     }
 
+    // Переименование через PATCH /models/{id}
     fun renameModel() {
         if (editName.isBlank()) {
             errorMessage = "Название не может быть пустым"
@@ -158,9 +184,11 @@ class ModelDetailScreenModel(
         }
         screenModelScope.launch {
             try {
-                ApiClient.api.updateModel(projectId, modelId, UpdateModelRequest(editName))
-                val updated = model?.copy(name = editName)
-                if (updated != null) LocalDb.saveModel(projectId, updated)
+                val updated = ApiClient.api.updateModel(
+                    projectId, modelId, PatchModelRequest(name = editName)
+                )
+                LocalDb.saveModel(projectId, updated)
+                model = updated
                 currentName = editName
                 showRenameDialog = false
             } catch (e: Exception) {
@@ -250,10 +278,14 @@ fun ModelDetailContent(screenModel: ModelDetailScreenModel) {
                         )
                         Spacer(Modifier.height(4.dp))
                         val progress = currentModel?.progress ?: 0
+                        // progress: 0-100 обучение, 100-200 предсказание, >=200 завершено
                         Text(
                             text = when {
-                                screenModel.isTraining -> "Обучение... $progress%"
-                                progress >= 100 -> "Завершено"
+                                progress >= 200 -> "Завершено"
+                                progress > 100 -> "Предсказание... ${progress - 100}%"
+                                screenModel.isTraining && progress in 1..100 -> "Обучение... $progress%"
+                                screenModel.isTraining -> "Запуск..."
+                                progress == 100 -> "Обучение завершено"
                                 progress == 0 -> "Не запущено"
                                 else -> "$progress%"
                             },
@@ -264,26 +296,40 @@ fun ModelDetailContent(screenModel: ModelDetailScreenModel) {
                 }
             }
 
-            // Start training button
+            // Кнопки старт / стоп обучения
             item {
-                Button(
-                    onClick = { screenModel.startTraining() },
+                val progress = currentModel?.progress ?: 0
+                val hasTrainingFiles = currentModel?.trainingFiles?.isNotEmpty() == true
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !screenModel.isTraining
-                            && (currentModel?.trainingFiles?.isNotEmpty() == true)
-                            && (currentModel?.progress ?: 0) < 100
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Button(
+                        onClick = { screenModel.startTraining() },
+                        modifier = Modifier.weight(1f),
+                        enabled = !screenModel.isTraining && hasTrainingFiles && progress < 200
+                    ) {
+                        if (screenModel.isTraining) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        } else {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(if (screenModel.isTraining) "Обучение..." else "Начать")
+                    }
                     if (screenModel.isTraining) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text("Обучение...")
-                    } else {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Начать обучение")
+                        OutlinedButton(
+                            onClick = { screenModel.stopTraining() },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Stop, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Остановить")
+                        }
                     }
                 }
             }
