@@ -126,7 +126,7 @@ class ProjectDetailScreenModel(
                     LocalDb.saveFileRecord(projectId, serverFile, localPath)
                     files = LocalDb.getFiles(projectId)
                 } else {
-                    // Сервер не вернул объект — обновляем список с сервера
+                    errorMessage = "Ошибка загрузки файла на сервер"
                     loadFiles()
                 }
             } catch (e: Exception) {
