@@ -181,7 +181,7 @@ interface MarkingLabApi {
     // ── Auth ──────────────────────────────────────────────────────────────────
 
     @Headers("Content-Type: application/json")
-    @POST("users/")
+    @POST("users")
     suspend fun register(@Body request: RegisterRequest): UserResponse
 
     @Headers("Content-Type: application/json")
