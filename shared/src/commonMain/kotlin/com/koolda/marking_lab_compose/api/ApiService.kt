@@ -19,7 +19,6 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
-import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.SerialName
@@ -38,14 +37,25 @@ data class ProjectDbResponse(
     @SerialName("updated_at") val updatedAt: String
 )
 
+// Вложенный объект origin_file, возвращаемый GET /files
+@Serializable
+data class OriginFileResponse(
+    val id: Int,
+    val name: String,
+    @SerialName("total_rows") val totalRows: Int = 0,
+    @SerialName("is_labeled") val isLabeled: Boolean = false,
+    @SerialName("created_at") val createdAt: String = "",
+    @SerialName("updated_at") val updatedAt: String = ""
+)
+
 @Serializable
 data class FileListResponse(
     val id: Int,
     val name: String,
     @SerialName("total_rows") val totalRows: Int = 0,
-    @SerialName("origin_file_id") val originFileId: Int? = null,
+    // Сервер возвращает вложенный объект origin_file, а не origin_file_id
+    @SerialName("origin_file") val originFile: OriginFileResponse? = null,
     @SerialName("is_labeled") val isLabeled: Boolean = false,
-    val tags: List<String> = emptyList(),
     @SerialName("created_at") val createdAt: String = "",
     @SerialName("updated_at") val updatedAt: String = ""
 )
@@ -295,16 +305,17 @@ object ApiClient {
             header(HttpHeaders.Authorization, "Bearer ${TokenManager.accessToken}")
             setBody(
                 MultiPartFormDataContent(formData {
-                    append("file", fileBytes, io.ktor.http.Headers.build {
-                        append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
-                        append(HttpHeaders.ContentType, ContentType.Application.OctetStream.toString())
-                    })
+                    // name и is_labeled — обязательные Form(...) поля на сервере
+                    append("name", fileName)
+                    append("is_labeled", "false")
+                    // file — сам бинарный контент (FastAPI читает через UploadFile,
+                    // filename берётся из form-поля "name", не из Content-Disposition)
+                    append("file", fileBytes)
                 })
             )
         }
-        // Пробуем обёрнутый формат {"data": {...}}, затем прямой
-        return runCatching { response.body<SingleFileResponse>().data }
-            .getOrElse { runCatching { response.body<FileListResponse>() }.getOrNull() }
+        // Сервер возвращает FileDbResponse напрямую (без обёртки {"data": ...})
+        return runCatching { response.body<FileListResponse>() }.getOrNull()
     }
 
     suspend fun downloadFile(projectId: Int, fileId: Int): Pair<String, ByteArray> {
