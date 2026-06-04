@@ -1,10 +1,13 @@
 package com.koolda.marking_lab_compose.ui.screens
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -250,6 +253,7 @@ fun ModelDetailContent(screenModel: ModelDetailScreenModel) {
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
         val currentModel = screenModel.model
+        val listState = rememberLazyListState()
 
         if (screenModel.isLoading && currentModel == null) {
             Box(
@@ -261,11 +265,13 @@ fun ModelDetailContent(screenModel: ModelDetailScreenModel) {
             return@Scaffold
         }
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(paddingValues),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize().padding(end = 12.dp),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             // Progress card
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
@@ -420,18 +426,34 @@ fun ModelDetailContent(screenModel: ModelDetailScreenModel) {
                     if (metrics.hasData()) {
                         item { MetricsCard(metrics) }
                     }
-                    items(
-                        graphs.entries.toList(),
-                        key = { (k, _) -> "graph_$k" }
-                    ) { (title, value) ->
-                        if (value.startsWith("data:image/")) {
-                            GraphImageCard(title = title, dataUrl = value)
-                        } else {
-                            GraphTextCard(title = title, text = value)
+                    val imageGraphs = graphs.filter { (_, v) -> v.startsWith("data:image/") }.entries.toList()
+                    val textGraphs = graphs.filter { (_, v) -> !v.startsWith("data:image/") }.entries.toList()
+                    if (imageGraphs.isNotEmpty()) {
+                        item(key = "image_graphs_row") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                imageGraphs.forEach { (title, dataUrl) ->
+                                    GraphImageCard(
+                                        title = title,
+                                        dataUrl = dataUrl,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
                         }
+                    }
+                    items(textGraphs, key = { (k, _) -> "graph_text_$k" }) { (title, text) ->
+                        GraphTextCard(title = title, text = text)
                     }
                 }
             }
+            }
+            VerticalScrollbar(
+                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                adapter = rememberScrollbarAdapter(listState)
+            )
         }
     }
 
@@ -602,7 +624,7 @@ private fun MetricsCard(metrics: ModelMetrics) {
 // ========== GRAPH IMAGE CARD ==========
 @OptIn(ExperimentalEncodingApi::class)
 @Composable
-private fun GraphImageCard(title: String, dataUrl: String) {
+private fun GraphImageCard(title: String, dataUrl: String, modifier: Modifier = Modifier) {
     val imageBitmap: ImageBitmap? = remember(dataUrl) {
         runCatching {
             val base64 = dataUrl.substringAfter("base64,")
@@ -610,7 +632,7 @@ private fun GraphImageCard(title: String, dataUrl: String) {
             SkiaImage.makeFromEncoded(bytes).toComposeImageBitmap()
         }.getOrNull()
     }
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(modifier = modifier) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = title,
