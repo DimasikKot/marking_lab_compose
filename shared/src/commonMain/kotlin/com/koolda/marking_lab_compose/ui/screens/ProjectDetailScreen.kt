@@ -38,6 +38,13 @@ data class ProjectDetailScreen(
         val screenModel = rememberScreenModel {
             ProjectDetailScreenModel(projectId, projectName, projectDescription, projectIsPublic)
         }
+        val navigator = LocalNavigator.current
+        // Перезагружаем модели каждый раз при показе экрана (в т.ч. при возврате с ModelDetailScreen)
+        LaunchedEffect(navigator?.lastItem) {
+            if (navigator?.lastItem == this@ProjectDetailScreen) {
+                screenModel.loadModels()
+            }
+        }
         ProjectDetailContent(screenModel)
     }
 }
@@ -551,8 +558,9 @@ fun ModelSummaryCard(
                 }
             }
             Spacer(Modifier.height(8.dp))
+            val progressFraction = model.progress.coerceIn(0, 100) / 100f
             LinearProgressIndicator(
-                progress = { model.progress / 100f },
+                progress = { progressFraction },
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(4.dp))
@@ -561,7 +569,12 @@ fun ModelSummaryCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Прогресс: ${model.progress}%",
+                    text = when {
+                        model.progress >= 200 -> "Завершено"
+                        model.progress > 100 -> "Предсказание ${model.progress - 100}%"
+                        model.progress > 0 -> "Обучение ${model.progress}%"
+                        else -> "Не запущено"
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
