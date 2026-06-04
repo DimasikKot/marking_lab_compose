@@ -113,6 +113,11 @@ data class CreateModelRequest(
 )
 
 @Serializable
+data class UpdateModelRequest(
+    val name: String
+)
+
+@Serializable
 data class AddTrainingFilesRequest(
     @SerialName("file_ids") val fileIds: List<Int>
 )
@@ -177,7 +182,7 @@ interface MarkingLabApi {
     @POST("projects/{id}")
     suspend fun updateProject(
         @Path("id") projectId: Int, @Body request: PatchProjectRequest
-    ): ProjectDbResponse
+    ): Unit
 
     @DELETE("projects/{id}")
     suspend fun deleteProject(@Path("id") projectId: Int)
@@ -210,6 +215,14 @@ interface MarkingLabApi {
     suspend fun createModel(
         @Path("projectId") projectId: Int, @Body request: CreateModelRequest
     ): ModelListResponse
+
+    @Headers("Content-Type: application/json")
+    @POST("projects/{projectId}/models/{modelId}")
+    suspend fun updateModel(
+        @Path("projectId") projectId: Int,
+        @Path("modelId") modelId: Int,
+        @Body request: UpdateModelRequest
+    ): Unit
 
     @DELETE("projects/{projectId}/models/{modelId}")
     suspend fun deleteModel(
@@ -267,8 +280,8 @@ object ApiClient {
         ktorfit.create<MarkingLabApi>()
     }
 
-    suspend fun uploadFile(projectId: Int, fileName: String, fileBytes: ByteArray): FileListResponse {
-        val response = httpClient.post("${BASE_URL}projects/$projectId/files") {
+    suspend fun uploadFile(projectId: Int, fileName: String, fileBytes: ByteArray) {
+        httpClient.post("${BASE_URL}projects/$projectId/files") {
             header(HttpHeaders.Authorization, "Bearer ${TokenManager.accessToken}")
             setBody(
                 MultiPartFormDataContent(formData {
@@ -279,7 +292,6 @@ object ApiClient {
                 })
             )
         }
-        return response.body()
     }
 
     suspend fun downloadFile(projectId: Int, fileId: Int): Pair<String, ByteArray> {

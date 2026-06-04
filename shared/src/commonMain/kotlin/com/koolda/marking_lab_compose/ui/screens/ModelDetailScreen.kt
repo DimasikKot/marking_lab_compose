@@ -21,6 +21,7 @@ import com.koolda.marking_lab_compose.api.AddTrainingFilesRequest
 import com.koolda.marking_lab_compose.api.ApiClient
 import com.koolda.marking_lab_compose.api.FileListResponse
 import com.koolda.marking_lab_compose.api.ModelListResponse
+import com.koolda.marking_lab_compose.api.UpdateModelRequest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -32,16 +33,17 @@ data class ModelDetailScreen(
     @Composable
     override fun Content() {
         val screenModel = rememberScreenModel {
-            ModelDetailScreenModel(projectId, modelId)
+            ModelDetailScreenModel(projectId, modelId, modelName)
         }
-        ModelDetailContent(screenModel, modelName)
+        ModelDetailContent(screenModel)
     }
 }
 
 // ========== SCREEN MODEL ==========
 class ModelDetailScreenModel(
     private val projectId: Int,
-    private val modelId: Int
+    private val modelId: Int,
+    initialName: String
 ) : ScreenModel {
     var model by mutableStateOf<ModelListResponse?>(null)
     var projectFiles by mutableStateOf<List<FileListResponse>>(emptyList())
@@ -49,6 +51,11 @@ class ModelDetailScreenModel(
     var isTraining by mutableStateOf(false)
     var errorMessage by mutableStateOf<String?>(null)
     var showAddFilesDialog by mutableStateOf(false)
+
+    // Rename
+    var currentName by mutableStateOf(initialName)
+    var showRenameDialog by mutableStateOf(false)
+    var editName by mutableStateOf(initialName)
 
     init {
         loadModel()
@@ -132,6 +139,22 @@ class ModelDetailScreenModel(
         }
     }
 
+    fun renameModel() {
+        if (editName.isBlank()) {
+            errorMessage = "Название не может быть пустым"
+            return
+        }
+        screenModelScope.launch {
+            try {
+                ApiClient.api.updateModel(projectId, modelId, UpdateModelRequest(editName))
+                currentName = editName
+                showRenameDialog = false
+            } catch (e: Exception) {
+                errorMessage = e.message ?: "Ошибка переименования модели"
+            }
+        }
+    }
+
     fun clearError() {
         errorMessage = null
     }
@@ -140,7 +163,7 @@ class ModelDetailScreenModel(
 // ========== UI CONTENT ==========
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ModelDetailContent(screenModel: ModelDetailScreenModel, modelName: String) {
+fun ModelDetailContent(screenModel: ModelDetailScreenModel) {
     val navigator = LocalNavigator.current
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -154,13 +177,19 @@ fun ModelDetailContent(screenModel: ModelDetailScreenModel, modelName: String) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(modelName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = { Text(screenModel.currentName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = { navigator?.pop() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        screenModel.editName = screenModel.currentName
+                        screenModel.showRenameDialog = true
+                    }) {
+                        Icon(Icons.Default.Edit, contentDescription = "Переименовать")
+                    }
                     IconButton(onClick = { screenModel.loadModel() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Обновить")
                     }
@@ -304,6 +333,36 @@ fun ModelDetailContent(screenModel: ModelDetailScreenModel, modelName: String) {
                 }
             }
         }
+    }
+
+    // Rename dialog
+    if (screenModel.showRenameDialog) {
+        AlertDialog(
+            onDismissRequest = { screenModel.showRenameDialog = false },
+            title = { Text("Переименовать модель") },
+            text = {
+                OutlinedTextField(
+                    value = screenModel.editName,
+                    onValueChange = { screenModel.editName = it },
+                    label = { Text("Название *") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { screenModel.renameModel() },
+                    enabled = screenModel.editName.isNotBlank()
+                ) {
+                    Text("Сохранить")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { screenModel.showRenameDialog = false }) {
+                    Text("Отмена")
+                }
+            }
+        )
     }
 
     // Add training files dialog
