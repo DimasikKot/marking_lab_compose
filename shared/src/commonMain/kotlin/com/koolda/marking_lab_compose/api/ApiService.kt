@@ -42,20 +42,25 @@ data class ProjectDbResponse(
 data class FileListResponse(
     val id: Int,
     val name: String,
-    @SerialName("is_labeled") val isLabeled: Boolean,
-    @SerialName("created_at") val createdAt: String,
-    @SerialName("updated_at") val updatedAt: String
+    @SerialName("total_rows") val totalRows: Int = 0,
+    @SerialName("origin_file_id") val originFileId: Int? = null,
+    @SerialName("is_labeled") val isLabeled: Boolean = false,
+    val tags: List<String> = emptyList(),
+    @SerialName("created_at") val createdAt: String = "",
+    @SerialName("updated_at") val updatedAt: String = ""
 )
 
 @Serializable
 data class ModelListResponse(
     val id: Int,
     val name: String,
-    val progress: Int,
-    @SerialName("training_files") val trainingFiles: List<FileListResponse>,
-    @SerialName("prediction_files") val predictionFiles: List<FileListResponse>,
-    @SerialName("created_at") val createdAt: String,
-    @SerialName("updated_at") val updatedAt: String
+    @SerialName("redis_id") val redisId: String? = null,
+    val progress: Int = 0,
+    // parameters, metrics, graphs — произвольный JSONB, сохраняем отдельно через LocalDb
+    @SerialName("training_files") val trainingFiles: List<FileListResponse> = emptyList(),
+    @SerialName("prediction_files") val predictionFiles: List<FileListResponse> = emptyList(),
+    @SerialName("created_at") val createdAt: String = "",
+    @SerialName("updated_at") val updatedAt: String = ""
 )
 
 @Serializable
@@ -132,6 +137,11 @@ data class ProjectsResponse(
 @Serializable
 data class FilesResponse(
     val data: List<FileListResponse>
+)
+
+@Serializable
+data class SingleFileResponse(
+    val data: FileListResponse? = null
 )
 
 @Serializable
@@ -280,8 +290,8 @@ object ApiClient {
         ktorfit.create<MarkingLabApi>()
     }
 
-    suspend fun uploadFile(projectId: Int, fileName: String, fileBytes: ByteArray) {
-        httpClient.post("${BASE_URL}projects/$projectId/files") {
+    suspend fun uploadFile(projectId: Int, fileName: String, fileBytes: ByteArray): FileListResponse? {
+        val response = httpClient.post("${BASE_URL}projects/$projectId/files") {
             header(HttpHeaders.Authorization, "Bearer ${TokenManager.accessToken}")
             setBody(
                 MultiPartFormDataContent(formData {
@@ -292,6 +302,9 @@ object ApiClient {
                 })
             )
         }
+        // Пробуем обёрнутый формат {"data": {...}}, затем прямой
+        return runCatching { response.body<SingleFileResponse>().data }
+            .getOrElse { runCatching { response.body<FileListResponse>() }.getOrNull() }
     }
 
     suspend fun downloadFile(projectId: Int, fileId: Int): Pair<String, ByteArray> {
